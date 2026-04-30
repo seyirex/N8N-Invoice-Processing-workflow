@@ -1,0 +1,71 @@
+{
+  "name": "Invoice Data Reader",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "sub00001-0001-4000-8000-000000000001",
+      "name": "When called by Agent",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_HERE — your Google Spreadsheet ID (see README Step 4.3)",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "sub00002-0002-4000-8000-000000000002",
+      "name": "Read Invoice Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        464,
+        304
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_HERE — your n8n Google Sheets OAuth2 credential ID (see README Step 7.2)",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When called by Agent": {
+      "main": [
+        [
+          {
+            "node": "Read Invoice Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "saveManualExecutions": true
+  },
+  "versionId": "1092aaad-5be4-4c91-b117-d462d078154e",
+  "meta": {
+    "instanceId": "ba674f1e2fea4f81234df51261f23dc7156af3a378b6ecfd44f136365ecee5c3"
+  },
+  "id": "PAFfgxXrueRb8YBC",
+  "tags": []
+}

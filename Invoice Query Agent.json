@@ -1,0 +1,129 @@
+{
+  "name": "Invoice Query Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "agt00001-0001-4000-8000-000000000001",
+      "name": "Chat Trigger",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        304
+      ],
+      "webhookId": "invoice-query-chat-002"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "You are an invoice data analyst assistant for the finance team.\nYou have access to a tool called 'read_invoice_data' that fetches all invoice records from the company Google Sheets database.\n\nUse this tool to answer questions about:\n- Invoice totals, amounts, spending trends\n- Vendor history and breakdown\n- Invoice dates, due dates, overdue invoices\n- Specific invoice numbers or details\n- Aggregations (total by vendor, monthly spend, currency breakdown, etc.)\n\nAlways call the tool first to get the latest data. Be concise and accurate. Format currency values with 2 decimal places."
+        }
+      },
+      "id": "agt00002-0002-4000-8000-000000000002",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        464,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {}
+      },
+      "id": "agt00003-0003-4000-8000-000000000003",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        368,
+        528
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "REPLACE_HERE — your n8n Google PaLM/Gemini API credential ID (see README Step 7.5)",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "Fetches all invoice records from Google Sheets. Returns a list of invoices with fields: invoice_number, invoice_date, due_date, vendor_name, vendor_email, bill_to_company, total_amount, currency, payment_terms, source_file, processed_at. Call this tool whenever you need invoice data to answer the user's question.",
+        "workflowId": {
+          "__rl": true,
+          "value": "REPLACE_HERE — workflow ID of your imported Invoice Data Reader (see README Step 6)",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "agt00004-0004-4000-8000-000000000004",
+      "name": "Read Invoices Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        704,
+        512
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Chat Trigger": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Invoices Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "saveManualExecutions": true
+  },
+  "versionId": "9e1a5c86-c24e-4086-970d-65f41b546d70",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ba674f1e2fea4f81234df51261f23dc7156af3a378b6ecfd44f136365ecee5c3"
+  },
+  "id": "brKyfuJifwFthMF1",
+  "tags": []
+}

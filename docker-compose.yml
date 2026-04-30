@@ -1,0 +1,43 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# n8n Invoice Processing — Docker Compose
+#
+# Usage:
+#   1. cp .env.example .env  (then fill in your values)
+#   2. docker compose up -d
+#   3. Open http://localhost:5678
+#
+# Stop:   docker compose down
+# Logs:   docker compose logs -f n8n
+# Update: docker compose pull && docker compose up -d
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    volumes:
+      # Persists workflows, credentials, and settings across restarts
+      - n8n_data:/home/node/.n8n
+    env_file:
+      # All secrets and config come from .env (never commit that file)
+      - .env
+    environment:
+      # These are set here as safe defaults and will be overridden by .env
+      # if you define the same key there.
+      - N8N_HOST=${N8N_HOST:-0.0.0.0}
+      - N8N_PORT=${N8N_PORT:-5678}
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - N8N_PUSH_BACKEND=${N8N_PUSH_BACKEND:-websocket}
+      - N8N_DEFAULT_BINARY_DATA_MODE=${N8N_DEFAULT_BINARY_DATA_MODE:-default}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-UTC}
+      - N8N_LOG_LEVEL=${N8N_LOG_LEVEL:-info}
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678}
+
+volumes:
+  n8n_data:
+    # Named volume — Docker manages storage. Data survives "docker compose down".
+    # To fully reset n8n: docker compose down -v  (WARNING: deletes all data)
+    driver: local

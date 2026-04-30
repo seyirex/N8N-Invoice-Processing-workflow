@@ -1,0 +1,17 @@
+# Environment variables — never commit secrets
+.env
+
+# Docker Compose local overrides (may contain secrets)
+docker-compose.override.yml
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local start command (may contain custom flags or tokens)
+start-command.md
+
+# n8n local data volume (if cloned alongside the project)
+n8n_data/

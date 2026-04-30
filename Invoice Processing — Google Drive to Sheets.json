@@ -1,0 +1,815 @@
+{
+  "name": "Invoice Processing — Google Drive to Sheets",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "REPLACE_HERE — your Google Drive Invoices folder ID (see README Step 5)",
+          "mode": "id"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "name": "Watch Invoice Folder",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        128,
+        224
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "REPLACE_HERE — your n8n Google Drive OAuth2 credential ID (see README Step 7.1)",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-pdf",
+              "leftValue": "={{ $json.mimeType }}",
+              "rightValue": "application/pdf",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "cond-image",
+              "leftValue": "={{ $json.mimeType }}",
+              "rightValue": "image/",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0002-4000-8000-000000000002",
+      "name": "Is PDF or Image?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        352,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0003-4000-8000-000000000003",
+      "name": "Download File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        576,
+        224
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "REPLACE_HERE — your n8n Google Drive OAuth2 credential ID (see README Step 7.1)",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-is-pdf",
+              "leftValue": "={{ $('Watch Invoice Folder').item.json.mimeType }}",
+              "rightValue": "application/pdf",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0004-4000-8000-000000000004",
+      "name": "Is PDF?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        800,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-4000-8000-000000000005",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        1344,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\n  \"systemInstruction\": {\"parts\": [{\"text\": \"You are an invoice data extraction specialist. Extract all invoice information and return ONLY a valid JSON object with these exact fields: invoice_number (string), invoice_date (YYYY-MM-DD string), due_date (YYYY-MM-DD string or null), vendor_name (string), vendor_address (string), vendor_email (string or null), bill_to_company (string), bill_to_address (string), line_items (array of objects with: description, quantity, unit_price, total), subtotal (number), tax_amount (number), total_amount (number), currency (3-letter code), payment_terms (string or null), notes (string or null). Use null for any field you cannot determine. Return ONLY the JSON with no markdown or explanation.\"}]},\n  \"contents\": [{\"role\": \"user\", \"parts\": [{\"text\": {{ JSON.stringify(\"Extract invoice data from the following text:\\n\\n\" + $json.text.replace(/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]/g, \"\")) }}}]}],\n  \"generationConfig\": {\"responseMimeType\": \"application/json\", \"temperature\": 0}\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0006-4000-8000-000000000006",
+      "name": "AI — Structure PDF Invoice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1568,
+        176
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_HERE — your n8n Header Auth credential ID for Gemini API (see README Step 7.4)",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// PURPOSE: Read the invoice image and prepare it for Gemini's inlineData format.\n// Works for both the Google Drive watch path AND the direct Form Upload path.\n// Requires: N8N_DEFAULT_BINARY_DATA_MODE=default in your Docker environment.\n\n// Get source info from whichever trigger fired\nlet mimeType, fileName;\ntry {\n  mimeType = $('Watch Invoice Folder').item.json.mimeType;\n  fileName = $('Watch Invoice Folder').item.json.name;\n} catch(e) {\n  mimeType = $('Normalize Form Upload').item.json.mimeType;\n  fileName = $('Normalize Form Upload').item.json.name;\n}\n\nconst binaryKey = Object.keys($input.item.binary || {})[0];\nif (!binaryKey) {\n  throw new Error('No binary data found — check the Download File or Form Upload node ran successfully');\n}\n\nconst binaryData = $input.item.binary[binaryKey];\n\n// In memory mode (N8N_DEFAULT_BINARY_DATA_MODE=default), binaryData.data is real base64\nreturn {\n  json: {\n    mimeType:   mimeType,\n    base64Data: binaryData.data,\n    fileName:   binaryData.fileName || fileName\n  }\n};\n"
+      },
+      "id": "a1b2c3d4-0007-4000-8000-000000000007",
+      "name": "Prepare Image Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\n  \"systemInstruction\": {\"parts\": [{\"text\": \"You are an invoice data extraction specialist. Extract all invoice information and return ONLY a valid JSON object with these exact fields: invoice_number (string), invoice_date (YYYY-MM-DD string), due_date (YYYY-MM-DD string or null), vendor_name (string), vendor_address (string), vendor_email (string or null), bill_to_company (string), bill_to_address (string), line_items (array of objects with: description, quantity, unit_price, total), subtotal (number), tax_amount (number), total_amount (number), currency (3-letter code), payment_terms (string or null), notes (string or null). Use null for any field you cannot determine. Return ONLY the JSON with no markdown or explanation.\"}]},\n  \"contents\": [{\"role\": \"user\", \"parts\": [{\"text\": \"Extract all invoice data from this image.\"}, {\"inlineData\": {\"mimeType\": \"{{ $json.mimeType }}\", \"data\": \"{{ $json.base64Data }}\"}}]}],\n  \"generationConfig\": {\"responseMimeType\": \"application/json\", \"temperature\": 0}\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0008-4000-8000-000000000008",
+      "name": "AI — Extract Image Invoice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1568,
+        464
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_HERE — your n8n Header Auth credential ID for Gemini API (see README Step 7.4)",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// PURPOSE: Parse Gemini's JSON response, validate required fields, normalise types.\n// Works for both Google Drive and Form Upload trigger paths.\n//\n// Input:  Gemini API response  { candidates: [{ content: { parts: [{ text: \"...\" }] } }] }\n// Output (success): { valid: true, invoice_number, invoice_date, total_amount, ... }\n// Output (failure): { valid: false, error: \"...\", source_file: \"...\" }\n\n// Get source info from whichever trigger fired\nlet sourceName, sourceId;\ntry {\n  sourceName = $('Watch Invoice Folder').item.json.name;\n  sourceId   = $('Watch Invoice Folder').item.json.id;\n} catch(e) {\n  sourceName = $('Normalize Form Upload').item.json.name;\n  sourceId   = $('Normalize Form Upload').item.json.id || 'form-upload';\n}\n\n// ── Step 1: Extract text from Gemini response ─────────────────────────────\nconst responseContent = $input.item.json.candidates?.[0]?.content?.parts?.[0]?.text;\n\nif (!responseContent) {\n  return {\n    json: {\n      valid: false,\n      error: 'Gemini returned no content — check your API key and model name',\n      source_file: sourceName\n    }\n  };\n}\n\n// ── Step 2: Parse JSON ────────────────────────────────────────────────────\nlet invoice;\ntry {\n  invoice = JSON.parse(responseContent);\n} catch (e) {\n  return {\n    json: {\n      valid: false,\n      error: `Gemini response could not be parsed as JSON: ${e.message}`,\n      raw_response: responseContent.substring(0, 500),\n      source_file: sourceName\n    }\n  };\n}\n\n// ── Step 3: Validate required fields ─────────────────────────────────────\nconst requiredFields = ['invoice_number', 'invoice_date', 'vendor_name', 'total_amount'];\nconst missingFields  = requiredFields.filter(f => !invoice[f]);\n\nif (missingFields.length > 0) {\n  return {\n    json: {\n      valid: false,\n      error: `AI could not extract required fields: ${missingFields.join(', ')}`,\n      raw_response: responseContent.substring(0, 500),\n      source_file: sourceName\n    }\n  };\n}\n\n// ── Step 4: Normalise and return clean structured data ────────────────────\nreturn {\n  json: {\n    valid:           true,\n    invoice_number:  String(invoice.invoice_number  || ''),\n    invoice_date:    String(invoice.invoice_date    || ''),\n    due_date:        String(invoice.due_date        || ''),\n    vendor_name:     String(invoice.vendor_name     || ''),\n    vendor_address:  String(invoice.vendor_address  || ''),\n    vendor_email:    String(invoice.vendor_email    || ''),\n    bill_to_company: String(invoice.bill_to_company || ''),\n    bill_to_address: String(invoice.bill_to_address || ''),\n    line_items:      JSON.stringify(invoice.line_items || []),\n    subtotal:        Number(invoice.subtotal)     || 0,\n    tax_amount:      Number(invoice.tax_amount)   || 0,\n    total_amount:    Number(invoice.total_amount) || 0,\n    currency:        String(invoice.currency      || 'USD'),\n    payment_terms:   String(invoice.payment_terms || ''),\n    notes:           String(invoice.notes         || ''),\n    source_file:     sourceName,\n    source_file_id:  sourceId,\n    processed_at:    new Date().toISOString()\n  }\n};\n"
+      },
+      "id": "a1b2c3d4-0009-4000-8000-000000000009",
+      "name": "Parse & Validate Invoice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-valid",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0010-4000-8000-000000000010",
+      "name": "Is Valid Invoice?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2304,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_HERE — your Google Spreadsheet ID (see README Step 4.3)",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Invoice Number": "={{ $json.invoice_number }}",
+            "Invoice Date": "={{ $json.invoice_date }}",
+            "Due Date": "={{ $json.due_date }}",
+            "Vendor Name": "={{ $json.vendor_name }}",
+            "Vendor Address": "={{ $json.vendor_address }}",
+            "Vendor Email": "={{ $json.vendor_email }}",
+            "Bill To Company": "={{ $json.bill_to_company }}",
+            "Bill To Address": "={{ $json.bill_to_address }}",
+            "Line Items": "={{ $json.line_items }}",
+            "Subtotal": "={{ $json.subtotal }}",
+            "Tax Amount": "={{ $json.tax_amount }}",
+            "Total Amount": "={{ $json.total_amount }}",
+            "Currency": "={{ $json.currency }}",
+            "Payment Terms": "={{ $json.payment_terms }}",
+            "Notes": "={{ $json.notes }}",
+            "Source File": "={{ $json.source_file }}",
+            "Processed At": "={{ $json.processed_at }}"
+          },
+          "matchingColumns": [
+            "Invoice Number"
+          ],
+          "schema": [
+            {
+              "id": "Invoice Number",
+              "displayName": "Invoice Number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Invoice Date",
+              "displayName": "Invoice Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Due Date",
+              "displayName": "Due Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Vendor Name",
+              "displayName": "Vendor Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Vendor Address",
+              "displayName": "Vendor Address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Vendor Email",
+              "displayName": "Vendor Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Bill To Company",
+              "displayName": "Bill To Company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Bill To Address",
+              "displayName": "Bill To Address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Subtotal",
+              "displayName": "Subtotal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tax Amount",
+              "displayName": "Tax Amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Total Amount",
+              "displayName": "Total Amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Currency",
+              "displayName": "Currency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Payment Terms",
+              "displayName": "Payment Terms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Line Items",
+              "displayName": "Line Items",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Source File",
+              "displayName": "Source File",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Processed At",
+              "displayName": "Processed At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0011-4000-8000-000000000011",
+      "name": "Save to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        2512,
+        160
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_HERE — your n8n Google Sheets OAuth2 credential ID (see README Step 7.2)",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "REPLACE_HERE@gmail.com",
+        "subject": "=New Invoice Processed: {{ $('Parse & Validate Invoice').item.json.invoice_number }} — {{ $('Parse & Validate Invoice').item.json.vendor_name }}",
+        "message": "=<html><body style=\"font-family: Arial, sans-serif; color: #333;\">\n<h2 style=\"color: #2e7d32;\">Invoice Successfully Processed</h2>\n<p>A new invoice has been automatically extracted from Google Drive and saved to Google Sheets.</p>\n<table border=\"1\" cellpadding=\"10\" cellspacing=\"0\" style=\"border-collapse:collapse; width:100%; max-width:600px;\">\n  <tr style=\"background:#f5f5f5;\"><th>Field</th><th>Value</th></tr>\n  <tr><td><b>Invoice #</b></td><td>{{ $('Parse & Validate Invoice').item.json.invoice_number }}</td></tr>\n  <tr><td><b>Invoice Date</b></td><td>{{ $('Parse & Validate Invoice').item.json.invoice_date }}</td></tr>\n  <tr><td><b>Due Date</b></td><td>{{ $('Parse & Validate Invoice').item.json.due_date || 'N/A' }}</td></tr>\n  <tr><td><b>Vendor</b></td><td>{{ $('Parse & Validate Invoice').item.json.vendor_name }}</td></tr>\n  <tr><td><b>Vendor Email</b></td><td>{{ $('Parse & Validate Invoice').item.json.vendor_email || 'N/A' }}</td></tr>\n  <tr><td><b>Bill To</b></td><td>{{ $('Parse & Validate Invoice').item.json.bill_to_company }}</td></tr>\n  <tr><td><b>Subtotal</b></td><td>{{ $('Parse & Validate Invoice').item.json.currency }} {{ $('Parse & Validate Invoice').item.json.subtotal }}</td></tr>\n  <tr><td><b>Tax</b></td><td>{{ $('Parse & Validate Invoice').item.json.currency }} {{ $('Parse & Validate Invoice').item.json.tax_amount }}</td></tr>\n  <tr><td><b>Total Amount</b></td><td><b>{{ $('Parse & Validate Invoice').item.json.currency }} {{ $('Parse & Validate Invoice').item.json.total_amount }}</b></td></tr>\n  <tr><td><b>Payment Terms</b></td><td>{{ $('Parse & Validate Invoice').item.json.payment_terms || 'N/A' }}</td></tr>\n  <tr><td><b>Source File</b></td><td>{{ $('Parse & Validate Invoice').item.json.source_file }}</td></tr>\n  <tr><td><b>Processed At</b></td><td>{{ $('Parse & Validate Invoice').item.json.processed_at }}</td></tr>\n</table>\n<br>\n<p>View all invoices in <a href=\"https://docs.google.com/spreadsheets/d/REPLACE_HERE_YOUR_GOOGLE_SHEET_ID\">Google Sheets</a></p>\n</body></html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "a1b2c3d4-0012-4000-8000-000000000012",
+      "name": "Gmail — Invoice Processed",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        2736,
+        160
+      ],
+      "webhookId": "05b5a11f-adc4-4fa5-b4c1-aad570f07c68",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_HERE — your n8n Gmail OAuth2 credential ID (see README Step 7.3)",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "REPLACE_HERE@gmail.com",
+        "subject": "=Invoice Processing Failed: {{ $json.source_file }}",
+        "message": "=<html><body style=\"font-family: Arial, sans-serif; color: #333;\">\n<h2 style=\"color: #c62828;\">Invoice Processing Failed</h2>\n<p>A new invoice file was uploaded to Google Drive but could not be processed automatically.</p>\n<table border=\"1\" cellpadding=\"10\" cellspacing=\"0\" style=\"border-collapse:collapse; width:100%; max-width:600px;\">\n  <tr style=\"background:#f5f5f5;\"><th>Field</th><th>Value</th></tr>\n  <tr><td><b>File Name</b></td><td>{{ $json.source_file }}</td></tr>\n  <tr><td><b>Error</b></td><td style=\"color:#c62828;\">{{ $json.error }}</td></tr>\n  <tr><td><b>Time</b></td><td>{{ $now.toISO() }}</td></tr>\n</table>\n<br>\n<p>Please review the file manually and add the invoice data to <a href=\"https://docs.google.com/spreadsheets/d/REPLACE_HERE_YOUR_GOOGLE_SHEET_ID\">Google Sheets</a>.</p>\n</body></html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "a1b2c3d4-0013-4000-8000-000000000013",
+      "name": "Gmail — Extraction Failed",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        2512,
+        448
+      ],
+      "webhookId": "19a22504-8837-434d-ae2d-32795ef285f5",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_HERE — your n8n Gmail OAuth2 credential ID (see README Step 7.3)",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "formTitle": "Upload Invoice",
+        "formDescription": "Upload a PDF or image invoice for automatic processing",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Invoice File",
+              "fieldType": "file",
+              "multipleFiles": false,
+              "acceptFileTypes": ".pdf,.jpg,.jpeg,.png,.webp",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "path": "upload-invoice"
+        }
+      },
+      "id": "f0rm0001-0001-4000-8000-000000000001",
+      "name": "Form Upload Trigger",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        144,
+        544
+      ],
+      "webhookId": "form-upload-invoice-001"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// PURPOSE: Validate and normalize the file uploaded via the form trigger.\n// Renames the binary key to 'data' so downstream nodes (Extract PDF Text,\n// Prepare Image Data) find it under the same key that Google Drive downloads use.\n\nconst binaryKey = Object.keys($input.item.binary || {})[0];\nif (!binaryKey) {\n  throw new Error('No file was uploaded. Please select a PDF or image file.');\n}\n\nconst binaryData = $input.item.binary[binaryKey];\nconst mimeType   = binaryData.mimeType || 'application/octet-stream';\n\nif (!mimeType.startsWith('image/') && mimeType !== 'application/pdf') {\n  throw new Error(\n    `Unsupported file type: ${mimeType}. Please upload a PDF or image (JPG, PNG, WEBP).`\n  );\n}\n\n// Rename to 'data' — matches the binary key Google Drive's Download File node uses,\n// so Extract PDF Text and Prepare Image Data work identically for both paths.\nreturn {\n  json: {\n    mimeType: mimeType,\n    name:     binaryData.fileName || `upload-${Date.now()}.${mimeType.split('/')[1] || 'bin'}`,\n    id:       `form-upload-${Date.now()}`,\n    source:   'form-upload'\n  },\n  binary: { data: binaryData }\n};\n"
+      },
+      "id": "f0rm0002-0002-4000-8000-000000000002",
+      "name": "Normalize Form Upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        368,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-upload-is-pdf",
+              "leftValue": "={{ $json.mimeType }}",
+              "rightValue": "application/pdf",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f0rm0003-0003-4000-8000-000000000003",
+      "name": "Is PDF? (Upload)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        592,
+        544
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Watch Invoice Folder": {
+      "main": [
+        [
+          {
+            "node": "Is PDF or Image?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is PDF or Image?": {
+      "main": [
+        [
+          {
+            "node": "Download File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Download File": {
+      "main": [
+        [
+          {
+            "node": "Is PDF?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is PDF?": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Image Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "AI — Structure PDF Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI — Structure PDF Invoice": {
+      "main": [
+        [
+          {
+            "node": "Parse & Validate Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Image Data": {
+      "main": [
+        [
+          {
+            "node": "AI — Extract Image Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI — Extract Image Invoice": {
+      "main": [
+        [
+          {
+            "node": "Parse & Validate Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Validate Invoice": {
+      "main": [
+        [
+          {
+            "node": "Is Valid Invoice?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid Invoice?": {
+      "main": [
+        [
+          {
+            "node": "Save to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail — Extraction Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Gmail — Invoice Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Form Upload Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize Form Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Form Upload": {
+      "main": [
+        [
+          {
+            "node": "Is PDF? (Upload)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is PDF? (Upload)": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Image Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "versionId": "4c334a05-de3f-4fe0-aa3e-cc0af0782164",
+  "meta": {
+    "instanceId": "ba674f1e2fea4f81234df51261f23dc7156af3a378b6ecfd44f136365ecee5c3"
+  },
+  "id": "lk5YPdDBBveJrHBj",
+  "tags": []
+}
