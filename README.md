@@ -115,7 +115,7 @@ Restart your computer, then install Docker Desktop.
 ### 1.1 Clone this repository
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/seyirex/N8N-Invoice-Processing-workflow
 cd N8N-Invoice-Processing-workflow
 ```
 
