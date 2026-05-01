@@ -15,3 +15,4 @@ start-command.md
 
 # n8n local data volume (if cloned alongside the project)
 n8n_data/
+old.workflow/
